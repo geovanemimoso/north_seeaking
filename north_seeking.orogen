@@ -1,0 +1,35 @@
+name "north_seeking"
+
+import_types_from "north_seekingTypes.hpp"
+import_types_from "base"
+
+task_context "Task" do
+
+    #Number of samples to acquire
+    property( "number_samples_to_acquire", "int", 200 )
+
+    #Max time tolerance (microseconds) between samples to consider its synchronization
+    property("sync_time_tolerance", "/base/Time")
+
+    #Degrees around the peak that the algorithm will search for the best match with 0.1 degrees of precision
+    property("angle_search_range", "int", 5)
+
+    # Position samples from a gps-sensor
+    input_port "gps_position_samples", "/base/samples/RigidBodyState"
+
+    # Current pose of the vehicle
+    input_port "pose_samples", "base/samples/RigidBodyState"
+
+    # Angle to be added at the initial yaw state of the orientation estimator (rad);
+    output_port "yaw_rotation", "double"
+
+    # Aggregator Parameters
+    transformer do
+        transformation("gps", "body")
+        align_port("gps_position_samples", 0.9)
+        align_port("pose_samples", 0.2)
+        max_latency(1.0)
+    end
+
+    periodic 10.0
+end

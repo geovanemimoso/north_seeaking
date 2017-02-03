@@ -1,0 +1,14 @@
+<package>
+  <description brief="Find the heading relative to north.">
+  This component gets gps and dead reckoning data from a mobile robot and outputs its heading relative to north.
+  </description>
+  <author>Geovane Mimoso /geovanemimoso@gmail.com</author>
+  <license></license>
+  <url>http://</url>
+  <logo>http://</logo>
+
+  <depend package="base/cmake" />
+  <depend package="base/types" />
+  <depend package="drivers/aggregator"/>
+
+</package>
