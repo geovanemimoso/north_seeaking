@@ -1,0 +1,19 @@
+--- name:default
+# Degrees around the peak that the algorithm will search for the best match with 0.1 degrees of precision
+angle_search_range: 5
+
+# Time in s between gps_position_samples readings
+gps_position_samples_period: 1.0
+# Number of samples to acquire
+number_samples_to_acquire: 300
+# Time in s between pose_samples readings
+pose_samples_period: 0.2
+# list of static transformations
+
+# Max time tolerance (microseconds) between samples to consider its synchronization
+sync_time_tolerance:
+  microseconds: 50000
+# Maximum time in seconds the transformer will wait until it starts dropping samples
+transformer_max_latency: 1.1
+# Minimum system time in seconds between two updates of the status ports
+transformer_status_period: 0.1

@@ -9,15 +9,6 @@
 #include <math.h>
 #include <queue>
 
-// class Histogram {
-//     public:
-//         Histogram(int bins, size_t cache)
-//             : acc(accumulator_set<double,
-//                     features<tag::min, tag::max, tag::mean, tag::density> >( tag::density::num_bins = bins, tag::density::cache_size = std::min(cache, MAX_CACHE_ENTRIES))) {
-//         }
-//         accumulator_set<double,features <tag::min, tag::max, tag::mean, tag::density> > acc;
-// };
-
 namespace north_seeking{
 
     /*! \class Task
@@ -49,28 +40,19 @@ namespace north_seeking{
 
         bool matchSampleTime(base::Time sample_time, point& dead_near_time);
 
-        /** Tries to get a transformation from the given transformer at time ts
-         * @returns true if successful
-         */
-        bool getSensorInBody(const transformer::Transformation& sensor2body_transformer, const base::Time &ts, Eigen::Affine3d& sensorInBody);
+        double lensArea(const point &gps, const point &dead_reckoning, const double &points_distance);
 
-        double lensArea(const point &gps, const point &dead_reckoning);
+        void findBestFitAngle(double peak);
 
-        double findBestFitAngle(double peak);
+        void translatePointsOrigin();
 
 		std::queue<point> dead_buffer_queue;
-
-        // Inicialize the vectors config hook ???  <<<<<<<<<<<<<
         std::vector<point> dead_sync;
         std::vector<point> gps_sync;
 
         double rotation_angle;
         int count_acquire;
         bool acquire_done,best_fit_done;
-
-
-        //accumulator rotations_acc;//( tag::density::num_bins = 20, tag::density::cache_size = 10);
-        //accumulator rotations_acc(tag::density::num_bins = 20, tag::density::cache_size = 10);
 
     public:
         /** TaskContext constructor for Task

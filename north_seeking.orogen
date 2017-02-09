@@ -25,11 +25,10 @@ task_context "Task" do
 
     # Aggregator Parameters
     transformer do
-        transformation("gps", "body")
         align_port("gps_position_samples", 0.9)
         align_port("pose_samples", 0.2)
         max_latency(1.0)
     end
 
-    periodic 10.0
+    port_driven
 end
