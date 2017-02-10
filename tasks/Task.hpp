@@ -11,48 +11,75 @@
 
 namespace north_seeking{
 
-    /*! \class Task
-     * \brief The task context provides and requires services. It uses an ExecutionEngine to perform its functions.
-     * Essential interfaces are operations, data flow ports and properties. These interfaces have been defined using the oroGen specification.
-     * In order to modify the interfaces you should (re)use oroGen and rely on the associated workflow.
-     *
-     * \details
-     * The name of a TaskContext is primarily defined via:
-     \verbatim
-     deployment 'deployment_name'
-         task('custom_task_name','north_seeking::Task')
-     end
-     \endverbatim
-     *  It can be dynamically adapted when the deployment is called with a prefix argument.
-     */
     class Task : public TaskBase
     {
 	friend class TaskBase;
     protected:
 
-        virtual void gps_position_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &gps_position_samples_sample);
-
-        virtual void pose_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &pose_samples_sample);
-
-        double pointRotation(const point &gps, const point &dead_reckoning);
-
-        double rotationHistPeak();
-
-        bool matchSampleTime(base::Time sample_time, point& dead_near_time);
-
-        double lensArea(const point &gps, const point &dead_reckoning, const double &points_distance);
-
-        void findBestFitAngle(double peak);
-
-        void translatePointsOrigin();
-
-		std::queue<point> dead_buffer_queue;
+        States last_state;
+        States new_state;
+        double rotation_angle;
+        int count_acquire;
+        std::queue<point> dead_buffer_queue;
         std::vector<point> dead_sync;
         std::vector<point> gps_sync;
 
-        double rotation_angle;
-        int count_acquire;
-        bool acquire_done,best_fit_done;
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        virtual void gps_position_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &gps_position_samples_sample);
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        virtual void pose_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &pose_samples_sample);
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        double getPositiveAngle(double angle);
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        double findRotationHistPeak();
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        bool matchSampleTime(base::Time sample_time, point& dead_near_time);
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        double calcOverlapCircleArea(const point &gps, const point &dead_reckoning, const double &points_distance);
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        void findBestFitAngle(double peak);
+
+        /*
+        * What do i do ?
+        * @param ts -
+        * @param gps_position_samples_sample -
+        */
+        void translatePointsOrigin();
+
 
     public:
         /** TaskContext constructor for Task
@@ -70,7 +97,7 @@ namespace north_seeking{
 
         /** Default deconstructor of Task
          */
-	~Task();
+        ~Task();
 
         /** This hook is called by Orocos when the state machine transitions
          * from PreOperational to Stopped. If it returns false, then the
@@ -130,6 +157,6 @@ namespace north_seeking{
          */
         void cleanupHook();
     };
-}
+} /* namespace north_seeking */
 
 #endif

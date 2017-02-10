@@ -14,21 +14,24 @@ task_context "Task" do
     #Degrees around the peak that the algorithm will search for the best match with 0.1 degrees of precision
     property("angle_search_range", "int", 5)
 
-    # Position samples from a gps-sensor
+    #Position samples from a gps-sensor
     input_port "gps_position_samples", "/base/samples/RigidBodyState"
 
-    # Current pose of the vehicle
+    #Current pose of the vehicle from dead_reckoning
     input_port "pose_samples", "base/samples/RigidBodyState"
 
-    # Angle to be added at the initial yaw state of the orientation estimator (rad);
+    #Angle of rotation to be aligned to north;
     output_port "yaw_rotation", "double"
 
-    # Aggregator Parameters
+    #Aggregator Parameters
     transformer do
         align_port("gps_position_samples", 0.9)
         align_port("pose_samples", 0.2)
         max_latency(1.0)
     end
+
+    #Task States
+    runtime_states :ACQUIRING, :COMPUTING, :ROTATION_FOUND
 
     port_driven
 end

@@ -8,8 +8,8 @@ Task::Task(std::string const& name)
     : TaskBase(name)
 {
     count_acquire = 0;
-    acquire_done = false;
-    best_fit_done = false;
+    last_state = PRE_OPERATIONAL;
+    new_state = ACQUIRING;
 }
 
 Task::Task(std::string const& name, RTT::ExecutionEngine* engine)
@@ -23,65 +23,63 @@ Task::~Task()
 
 void Task::gps_position_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &gps_position_samples_sample)
 {
-    if(_number_samples_to_acquire.get() > count_acquire)
+
+    if(new_state == ACQUIRING)
     {
-        if(gps_position_samples_sample.position.block(0,0,2,1).allFinite() && gps_position_samples_sample.cov_position.block(0,0,2,2).allFinite())
+        if(_number_samples_to_acquire.get() > count_acquire)
         {
-            try
+            if(gps_position_samples_sample.position.block(0,0,2,1).allFinite() && gps_position_samples_sample.cov_position.block(0,0,2,2).allFinite())
             {
-                //Get gps data alredy at the point structure
-                point gps_current;
-                point dead_near_time;
-
-                gps_current.sample_time = gps_position_samples_sample.time;
-                gps_current.x =  gps_position_samples_sample.position.x();
-                gps_current.y =  gps_position_samples_sample.position.y();
-                gps_current.error = gps_position_samples_sample.cov_position(0,0);
-
-                if(matchSampleTime(gps_current.sample_time, dead_near_time))
+                try
                 {
-                    gps_sync.push_back(gps_current);
-                    dead_sync.push_back(dead_near_time);
+                    // Get gps data alredy at the point structure
+                    point gps_current;
+                    point dead_near_time;
 
-                    std::cout << "Sample inside: " << count_acquire << std::endl;
+                    gps_current.sample_time = gps_position_samples_sample.time;
+                    gps_current.x =  gps_position_samples_sample.position.x();
+                    gps_current.y =  gps_position_samples_sample.position.y();
+                    gps_current.error = gps_position_samples_sample.cov_position(0,0);
 
-                    count_acquire++;
+                    if(matchSampleTime(gps_current.sample_time, dead_near_time))
+                    {
+                        gps_sync.push_back(gps_current);
+                        dead_sync.push_back(dead_near_time);
+
+                        std::cout << "Sample inside: " << count_acquire << std::endl;
+
+                        count_acquire++;
+                    }
+                    else{
+                        RTT::log(RTT::Error) << "Dead rechoning buffer deque is empety or no match for this sample time was found!" << RTT::endlog();
+                    }
+
                 }
-                else{
-                    RTT::log(RTT::Error) << "Dead rechoning buffer deque is empety or no match for this sample time was found!" << RTT::endlog();
+                catch(const std::runtime_error& e)
+                {
+                    RTT::log(RTT::Error) << "Failed to add GPS measurement: " << e.what() << RTT::endlog();
                 }
-
             }
-            catch(const std::runtime_error& e)
-            {
-                RTT::log(RTT::Error) << "Failed to add GPS measurement: " << e.what() << RTT::endlog();
+            else{
+                RTT::log(RTT::Error) << "GPS position measurement contains NaN's, it will be skipped!" << RTT::endlog();
             }
-        }
-        else{
-            RTT::log(RTT::Error) << "GPS position measurement contains NaN's, it will be skipped!" << RTT::endlog();
-        }
-    }
-    else{
-        //Get the best rotation and update the output variable
-        if(!best_fit_done)
-        {
-            acquire_done = true;
+        }else{
+            new_state = COMPUTING;
             translatePointsOrigin();
-            findBestFitAngle(rotationHistPeak()); //Botar algum retorno de verificação !! (boolean na saida da função)
+            findBestFitAngle(findRotationHistPeak());
         }
     }
 }
 
 void Task::pose_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &pose_samples_sample)
 {
-    //std::cout << "Callback dead" << std::endl;
-    if(!acquire_done)
+    if(new_state == ACQUIRING)
     {
         if(pose_samples_sample.hasValidPosition() && pose_samples_sample.hasValidPositionCovariance())
         {
             try
             {
-                //Get dead reckoning data alredy at the point structure
+                // Get dead reckoning data alredy at the point structure
                 point dead_current;
 
                 dead_current.sample_time = pose_samples_sample.time;
@@ -101,21 +99,10 @@ void Task::pose_samplesTransformerCallback(const base::Time &ts, const ::base::s
     }
 }
 
-double Task::pointRotation(const point &gps, const point &dead_reckoning){
-
-    double angle;
-
-    // Pegar a media do atan2 de dead e gps e guardar (definir direção da rotação) #####
-    angle = atan2(gps.y, gps.x) - atan2(dead_reckoning.y, dead_reckoning.x);
-    if (angle < 0) angle += 2 * M_PI;
-
-    return angle;
-}
-
-//Get a sample time as reference and try to find the least difference of time at the dead_reckoning current buffer.
+// Get a sample time as reference and try to find the least difference of time at the dead_reckoning current buffer.
 bool Task::matchSampleTime(base::Time sample_time, point& dead_near_time){
 
-    int64_t time_diff_min = 10000000;
+    int64_t time_diff_min = std::numeric_limits<int64_t>::max();
     int64_t time_diff = 0;
 
     if(!dead_buffer_queue.empty())
@@ -140,40 +127,38 @@ bool Task::matchSampleTime(base::Time sample_time, point& dead_near_time){
     return false;
 }
 
-double Task::rotationHistPeak()
+double Task::getPositiveAngle(double angle)
 {
-    std::vector<double> rotations;
-    double rot_min = 100000;
-    double rot_max = -100000;
+    if (angle < 0)
+        return angle += 2 * M_PI;
+    return angle;
+}
+
+double Task::findRotationHistPeak()
+{
     int rot_range = 0;
+    double peak_index = 0;
+    double peak_max = std::numeric_limits<double>::min();
+    std::vector<double> points_rotation;
 
-    for (int i = 0; i < _number_samples_to_acquire.get(); ++i)
-    {
-        rotations.push_back(pointRotation(gps_sync[i],dead_sync[i]));
+    // Calculate the rotations
+    for (int i = 1; i < _number_samples_to_acquire.get(); ++i)
+        points_rotation.push_back(getPositiveAngle(atan2(gps_sync[i].y, gps_sync[i].x)) - getPositiveAngle(atan2(dead_sync[i].y, dead_sync[i].x)));
 
-        if(rot_max < rotations[i])
-            rot_max = rotations[i];
+    // Get the range for the acc/histogram (1 degree step)
+    rot_range = int(base::Angle::rad2Deg(*std::max_element(points_rotation.begin(),points_rotation.end())) - base::Angle::rad2Deg(*std::min_element(points_rotation.begin(),points_rotation.end())));
 
-        if(rot_min > rotations[i])
-            rot_min = rotations[i];
-    }
-
-    ////rad to degree to get the range
-    rot_max = (rot_max*180)/M_PI;
-    rot_min = (rot_min*180)/M_PI;
-
-    rot_range = int(rot_max - rot_min);
-
-    //if(rot_range > 0) ?
-    double peak_index, peak_max = 0;
+    // Instaciate a acc using the range from the rotations between the points
     accumulator rotations_acc(tag::density::num_bins = rot_range, tag::density::cache_size = _number_samples_to_acquire.get());
 
+    // Update de density accumulator
     for (int i = 0; i < _number_samples_to_acquire.get(); ++i)
-        rotations_acc(rotations[i]);
+        rotations_acc(points_rotation[i]);
 
     histogram_type hist = density(rotations_acc);
 
-    for( int i = 0; i < hist.size(); i++ )
+    // Get the peak from the histogram and return its index
+    for( uint i = 0; i < hist.size(); i++ )
     {
         if( peak_max < hist[i].second)
         {
@@ -181,11 +166,9 @@ double Task::rotationHistPeak()
             peak_index = hist[i].first;
         }
     }
-
     return peak_index;
 }
 
-//Put the trajectores at orign
 void Task::translatePointsOrigin()
 {
     point dead_init = dead_sync[0];
@@ -199,17 +182,18 @@ void Task::translatePointsOrigin()
         gps_sync[i].x -= gps_init.x;
         gps_sync[i].y -= gps_init.y;
     }
-
-    std::cout << "Translation done" << std::endl;
 }
 
 void  Task::findBestFitAngle(double peak){
 
-    double search_range_angle = peak - (_angle_search_range.get()*M_PI)/180;
-    double search_range_end = peak + (_angle_search_range.get()*M_PI)/180;
-    double search_increment = (0.1*M_PI)/180; //0.1 degrre in rad
-    double total_lens_area, max_total_lens_area, total_points_dist = 0;
-    double min_total_points_dist = 1000000; //<< -- Checar esse idexadores
+    double min_total_points_dist = std::numeric_limits<double>::max();
+    double max_total_overlap_area = std::numeric_limits<double>::min();
+    double total_overlap_area, total_points_dist = 0;
+
+    double search_range_angle = peak - base::Angle::deg2Rad(_angle_search_range.get());
+    double search_range_end = peak + base::Angle::deg2Rad(_angle_search_range.get());
+    double search_increment = base::Angle::deg2Rad(0.1); //0.1 degrre in rad
+
     double bestFitAngle;
     double points_distance;
     point dead_rotated;
@@ -218,58 +202,52 @@ void  Task::findBestFitAngle(double peak){
     std::cout << "search_range_angle: " << search_range_angle << std::endl;
     std::cout << "search_range_end: " << search_range_end << std::endl;
 
-    while( search_range_angle < search_range_end)
+    while(search_range_angle < search_range_end)
     {
         for (int i = 0; i < _number_samples_to_acquire.get(); ++i)
         {
             dead_rotated = dead_sync[i];
-
             dead_rotated.x = dead_sync[i].x*cos(search_range_angle)  - dead_sync[i].y*sin(search_range_angle);
             dead_rotated.y = dead_sync[i].x*sin(search_range_angle)  + dead_sync[i].y*cos(search_range_angle);
 
-            //Get the points distance to keep track of the min sum of it.
+            // Get the points distance to keep track of the min sum of it.
             points_distance =  sqrt(pow(gps_sync[i].x - dead_rotated.x,2) + pow(gps_sync[i].y - dead_rotated.y,2));
 
+            // Keep track of the total points distance and overlap area of all point for the current rotation in avaluation.
             total_points_dist += points_distance;
-            total_lens_area += lensArea(gps_sync[i],dead_rotated, points_distance);
+            total_overlap_area += calcOverlapCircleArea(gps_sync[i],dead_rotated, points_distance);
         }
 
-        //checar a BUSCA de max and min EM TODAS AS FUNÇOES (VALOR INICIAL) e melhor forma de fazer! <<<<<<<<
-        if(total_lens_area >= max_total_lens_area)
+        // Get tha max area with the min distance of points
+        if(total_overlap_area >= max_total_overlap_area)
         {
             if(total_points_dist < min_total_points_dist )
             {
                 min_total_points_dist = total_points_dist;
                 bestFitAngle = search_range_angle;
             }
-            max_total_lens_area = total_lens_area;
+            max_total_overlap_area = total_overlap_area;
         }
 
-        std::cout << "search_range_angle: " << search_range_angle << std::endl;
-        std::cout << "total_lens_area: " << total_lens_area << std::endl;
-        std::cout << "total_points_dist: " << total_points_dist << std::endl;
+        // std::cout << "search_range_angle: " << search_range_angle << std::endl;
+        // std::cout << "total_overlap_area: " << total_overlap_area << std::endl;
+        // std::cout << "total_points_dist: " << total_points_dist << std::endl;
 
-        total_lens_area = 0;
+        total_overlap_area = 0;
         total_points_dist = 0;
         search_range_angle += search_increment;
     }
-
     rotation_angle = bestFitAngle;
-    best_fit_done = true;
+    new_state = ROTATION_FOUND;
 }
 
-double Task::lensArea(const point &gps, const point &dead_reckoning, const double &points_distance)
+double Task::calcOverlapCircleArea(const point &gps, const point &dead_reckoning, const double &points_distance)
 {
-    //std::cout << "points_distance: " << points_distance << std::endl;
-
-    //In case they don't have a lens
+    // In case they don't have a overlap, Area = 0
     if( points_distance >= dead_reckoning.error + gps.error )
         return 0;
 
-    //std::cout << "dead_reckoning.error: " << dead_reckoning.error << std::endl;
-    //std::cout << "GPS.error: " << gps.error << std::endl;
-
-    //In case that the circles have the same origin R1<R2, R1>R2, R1=R2
+    // In case that the circles have the same origin R1<R2, R1>R2, R1=R2
      if(points_distance == 0)
      {
         if(dead_reckoning.error < gps.error)
@@ -278,7 +256,7 @@ double Task::lensArea(const point &gps, const point &dead_reckoning, const doubl
             return M_PI*pow(gps.error,2);
      }
 
-    //in case they are inside it other
+    // In case they are inside it other
     if(gps.error > dead_reckoning.error)
     {
         if(points_distance < gps.error - dead_reckoning.error)
@@ -288,32 +266,23 @@ double Task::lensArea(const point &gps, const point &dead_reckoning, const doubl
             return M_PI*pow(gps.error,2);
     }
 
-    //Function of lens discribed at 4 eq.15 (Area of two overlapping circles - ben breech)
-     double lens_a = sqrt((-points_distance + gps.error + dead_reckoning.error)*
+    // Function of overlap discribed at 4 eq.15 (Area of two overlapping circles - ben breech)
+     double overlap_a = sqrt((-points_distance + gps.error + dead_reckoning.error)*
                           (points_distance - gps.error + dead_reckoning.error)*
                           (points_distance + gps.error - dead_reckoning.error)*
                           (points_distance + gps.error + dead_reckoning.error))/points_distance;
 
-     //std::cout << "lens_a: " << lens_a << std::endl;
+     double overlap_s1 = (overlap_a + 2*gps.error)/2;
+     double overlap_s2 = (overlap_a + 2*dead_reckoning.error)/2;
 
-     double lens_s1 = (lens_a + 2*gps.error)/2;
-     double lens_s2 = (lens_a + 2*dead_reckoning.error)/2;
+     // Calculate the area of each segment of the overlap
+     double gps_segment = pow(gps.error,2)*asin(overlap_a/(2*gps.error)) -
+                          sqrt(overlap_s1*(overlap_s1 - overlap_a)*pow(overlap_s1 - gps.error,2));
 
-     //std::cout << "lens_s1: " << lens_s1 << std::endl;
-     //std::cout << "lens_s2: " << lens_s2 << std::endl;
+     double dead_segment = pow(dead_reckoning.error,2)*asin(overlap_a/(2*dead_reckoning.error)) -
+                           sqrt(abs(overlap_s2*(overlap_s2 - overlap_a)*pow(overlap_s2 - dead_reckoning.error,2)));
 
-     //calculate the area of each segment of the lens
-     double gps_segment = pow(gps.error,2)*asin(lens_a/(2*gps.error)) -
-                          sqrt(lens_s1*(lens_s1 - lens_a)*pow(lens_s1 - gps.error,2));
-
-     //std::cout << "gps_segment: " << gps_segment << std::endl;
-
-     double dead_segment = pow(dead_reckoning.error,2)*asin(lens_a/(2*dead_reckoning.error)) -
-                           sqrt(abs(lens_s2*(lens_s2 - lens_a)*pow(lens_s2 - dead_reckoning.error,2)));
-
-     //std::cout << "dead_segment: " << dead_segment << std::endl;
-
-     //return the area of the lens
+     // Return the area of the overlap
      return (gps_segment + dead_segment);
 }
 
@@ -339,8 +308,15 @@ void Task::updateHook()
 {
     TaskBase::updateHook();
 
-    if(best_fit_done)
+    if(new_state == ROTATION_FOUND)
         _yaw_rotation.write(rotation_angle);
+
+    // write task state if it has changed
+    if(last_state != new_state)
+    {
+        last_state = new_state;
+        state(new_state);
+    }
 }
 
 void Task::errorHook()
