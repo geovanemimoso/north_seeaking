@@ -25,58 +25,62 @@ namespace north_seeking{
         std::vector<point> gps_sync;
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Receives gps position samples and try to fing a match in time for it in dead_buffer_queue,
+        * if it finds put both samples aligned into dead_sync, gps_sync vectors and update the
+        * count_acquire counter for keep track of the number_samples_to_acquire config.
+        * @param ts - Time reference for the gps sample.
+        * @param gps_position_samples_sample - X, Y position and associated error to the sample.
         */
         virtual void gps_position_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &gps_position_samples_sample);
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Receives dead reckoing position samples and put then at the dead_buffer_queue
+        * until the acquire process is done.
+        * @param ts -  Time reference for the dead reckoning sample.
+        * @param pose_samples_sample - Dead reckoning position sample.
         */
         virtual void pose_samplesTransformerCallback(const base::Time &ts, const ::base::samples::RigidBodyState &pose_samples_sample);
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Receves a angle and if it's negative returns the correspondent positive angle
+        * if its positive, retuns the angle raveived.
+        * @param angle - angle in radians.
         */
         double getPositiveAngle(double angle);
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Get the rotations between the correspondent position points at dead_sync and gps_sync,
+        * set's up a histogram of this rotations and retunrs the peak angle of the histogram.
         */
         double findRotationHistPeak();
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Get a sample time as reference and try to find the least difference of time at
+        * the dead_reckoning current buffer until the dead_buffer_queue or the sync_time_tolerance is achive.
+        * @param sample_time - time of the sample that has to be matched.
+        * @param dead_near_time - pointer to the dead reckonig point to be placed at the dead_sync vector.
         */
         bool matchSampleTime(base::Time sample_time, point& dead_near_time);
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Calculates the overlapping area between two circles, defined as the position points (x,y)
+        * and its associated error (r);
+        * @param gps - gps point that has x,y postion its error and sample time.
+        * @param dead_reckoning - dead reckoning point that has x,y position its error and sample time.
+        * @param points_distance - the euclidean distance between the received points.
         */
         double calcOverlapCircleArea(const point &gps, const point &dead_reckoning, const double &points_distance);
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Search around the peak with the range defined by angle_search_range and 0.1 degree setps, and returnts
+        * the rotation angle that maximaze the total overlapping area betwwen the set of gps and dead points and minimize
+        * its total points distance.
+        * @param peak - peak of the rotaion histogram
         */
         void findBestFitAngle(double peak);
 
         /*
-        * What do i do ?
-        * @param ts -
-        * @param gps_position_samples_sample -
+        * Translate the dead_sync and gps_sync set of points to orign.
         */
         void translatePointsOrigin();
 
@@ -97,7 +101,7 @@ namespace north_seeking{
 
         /** Default deconstructor of Task
          */
-        ~Task();
+         ~Task();
 
         /** This hook is called by Orocos when the state machine transitions
          * from PreOperational to Stopped. If it returns false, then the
