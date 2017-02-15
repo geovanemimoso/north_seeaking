@@ -45,9 +45,6 @@ void Task::gps_position_samplesTransformerCallback(const base::Time &ts, const :
                     {
                         gps_sync.push_back(gps_current);
                         dead_sync.push_back(dead_near_time);
-
-                        std::cout << "Sample inside: " << count_acquire << std::endl;
-
                         count_acquire++;
                     }
                     else{
@@ -99,7 +96,6 @@ void Task::pose_samplesTransformerCallback(const base::Time &ts, const ::base::s
     }
 }
 
-// Get a sample time as reference and try to find the least difference of time at the dead_reckoning current buffer.
 bool Task::matchSampleTime(base::Time sample_time, point& dead_near_time){
 
     int64_t time_diff_min = std::numeric_limits<int64_t>::max();
@@ -198,10 +194,6 @@ void  Task::findBestFitAngle(double peak){
     double points_distance;
     point dead_rotated;
 
-    std::cout << "Peak: " << peak << std::endl;
-    std::cout << "search_range_angle: " << search_range_angle << std::endl;
-    std::cout << "search_range_end: " << search_range_end << std::endl;
-
     while(search_range_angle < search_range_end)
     {
         for (int i = 0; i < _number_samples_to_acquire.get(); ++i)
@@ -228,10 +220,6 @@ void  Task::findBestFitAngle(double peak){
             }
             max_total_overlap_area = total_overlap_area;
         }
-
-        // std::cout << "search_range_angle: " << search_range_angle << std::endl;
-        // std::cout << "total_overlap_area: " << total_overlap_area << std::endl;
-        // std::cout << "total_points_dist: " << total_points_dist << std::endl;
 
         total_overlap_area = 0;
         total_points_dist = 0;
